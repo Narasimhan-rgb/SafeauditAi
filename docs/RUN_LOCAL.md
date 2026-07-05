@@ -11,20 +11,9 @@ copy .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-Open `http://127.0.0.1:8000/docs` to test the API.
+Open `http://127.0.0.1:8000/docs` to test the API and `http://127.0.0.1:8000/health` for service status.
 
-Create one dashboard test event with the `POST /api/v1/events` endpoint:
-
-```json
-{
-  "event_type": "ppe_non_compliance",
-  "severity": "high",
-  "message": "Helmet missing inside configured safety zone.",
-  "source_name": "demo-video.mp4"
-}
-```
-
-## 2. Frontend
+## 2. Dashboard
 
 In another terminal:
 
@@ -34,8 +23,33 @@ npm install
 npm run dev
 ```
 
-Open the URL printed by Vite, normally `http://127.0.0.1:5173`.
+Open the Vite address, normally `http://127.0.0.1:5173`.
+
+## 3. Enable the PPE video path
+
+The dashboard, zone API, and event log run without a vision model. For video analysis, install the optional dependencies:
+
+```powershell
+cd backend
+pip install -r requirements-vision.txt
+```
+
+Then set an authorised model path in `backend/.env`:
+
+```text
+MODEL_PATH=path/to/your/ppe-model.pt
+```
+
+The model must expose exactly these labels: `person`, `helmet`, and `vest`.
+
+## Demo sequence
+
+1. Start backend and dashboard.
+2. Save one rectangular safety zone through the dashboard.
+3. Select a short authorised test clip.
+4. Run local analysis.
+5. Review the generated event and evidence image in the dashboard.
 
 ## Current status
 
-The dashboard and local event APIs are functional scaffolding. Real video inference is deliberately blocked until an authorised PPE model is configured through `MODEL_PATH` in `backend/.env`.
+This is a local prototype. It processes one short video synchronously and retains event evidence images only. It does not claim multi-camera support, validated near-miss detection, safety certification, or production accuracy.
