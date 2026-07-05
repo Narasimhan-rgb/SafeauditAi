@@ -1,8 +1,11 @@
+import csv
+import io
 import json
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -34,7 +37,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
 app.mount("/evidence", StaticFiles(directory=incident_directory), name="evidence")
 
 app.add_middleware(
@@ -110,6 +113,45 @@ def create_manual_event(payload: EventCreate, db: Session = Depends(get_db)) -> 
 def list_events(db: Session = Depends(get_db)) -> list[EventResponse]:
     events = db.scalars(select(SafetyEvent).order_by(SafetyEvent.created_at.desc())).all()
     return [event_to_response(event) for event in events]
+
+
+@app.get(f"{settings.api_prefix}/metrics")
+def safety_metrics(db: Session = Depends(get_db)) -> dict[str, int]:
+    """Small dashboard summary for local prototype review."""
+    events = db.scalars(select(SafetyEvent)).all()
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
+    zones_count = len(db.scalars(select(SafetyZone)).all())
+    return {
+        "total_events": len(events),
+        "high_risk_events": sum(event.severity == "high" for event in events),
+        "events_last_24h": sum(event.created_at >= cutoff for event in events),
+        "configured_zones": zones_count,
+    }
+
+
+@app.get(f"{settings.api_prefix}/reports/events.csv")
+def export_events_csv(db: Session = Depends(get_db)) -> Response:
+    """Exports a local review report. It contains metadata only, never raw video."""
+    events = db.scalars(select(SafetyEvent).order_by(SafetyEvent.created_at.desc())).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["event_id", "created_at", "event_type", "severity", "message", "source_name", "evidence_path"])
+    for event in events:
+        writer.writerow([
+            event.id,
+            event.created_at.isoformat(),
+            event.event_type,
+            event.severity,
+            event.message,
+            event.source_name or "",
+            event.evidence_path or "",
+        ])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=safeaudit-events.csv"},
+    )
 
 
 @app.post(f"{settings.api_prefix}/analysis/video", response_model=AnalysisResponse)
