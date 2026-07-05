@@ -6,6 +6,7 @@ const FILE_BASE = API_BASE.replace("/api/v1", "");
 export default function App() {
   const [events, setEvents] = useState([]);
   const [zones, setZones] = useState([]);
+  const [metrics, setMetrics] = useState({ total_events: 0, high_risk_events: 0, events_last_24h: 0, configured_zones: 0 });
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
@@ -17,13 +18,17 @@ export default function App() {
     try {
       setLoading(true);
       setError("");
-      const [eventsResponse, zonesResponse] = await Promise.all([
+      const [eventsResponse, zonesResponse, metricsResponse] = await Promise.all([
         fetch(`${API_BASE}/events`),
         fetch(`${API_BASE}/zones`),
+        fetch(`${API_BASE}/metrics`),
       ]);
-      if (!eventsResponse.ok || !zonesResponse.ok) throw new Error("Unable to load SafeAudit data.");
+      if (!eventsResponse.ok || !zonesResponse.ok || !metricsResponse.ok) {
+        throw new Error("Unable to load SafeAudit data.");
+      }
       setEvents(await eventsResponse.json());
       setZones(await zonesResponse.json());
+      setMetrics(await metricsResponse.json());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -53,8 +58,8 @@ export default function App() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || "Unable to create safety zone.");
-      setZones((current) => [payload, ...current]);
       setStatus("Safety zone saved. You can now analyse a short authorised test clip.");
+      await loadDashboard();
     } catch (err) {
       setError(err.message);
     }
@@ -85,8 +90,6 @@ export default function App() {
     }
   }
 
-  const highRiskCount = events.filter((event) => event.severity === "high").length;
-
   return (
     <main className="page">
       <header className="header">
@@ -95,13 +98,17 @@ export default function App() {
           <h1>SafeAudit AI</h1>
           <p className="subtitle">Local PPE and restricted-zone safety event dashboard.</p>
         </div>
-        <button onClick={loadDashboard}>Refresh</button>
+        <div className="header-actions">
+          <a className="secondary-button" href={`${API_BASE}/reports/events.csv`}>Download event CSV</a>
+          <button onClick={loadDashboard}>Refresh</button>
+        </div>
       </header>
 
       <section className="cards" aria-label="Safety summary">
-        <article><span>Total events</span><strong>{events.length}</strong></article>
-        <article><span>High-risk events</span><strong>{highRiskCount}</strong></article>
-        <article><span>Storage policy</span><strong>Event-only</strong></article>
+        <article><span>Total events</span><strong>{metrics.total_events}</strong></article>
+        <article><span>High-risk events</span><strong>{metrics.high_risk_events}</strong></article>
+        <article><span>Events in 24 hours</span><strong>{metrics.events_last_24h}</strong></article>
+        <article><span>Configured zones</span><strong>{metrics.configured_zones}</strong></article>
       </section>
 
       <section className="workspace">
