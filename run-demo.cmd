@@ -64,8 +64,8 @@ if not exist "node_modules" (
 
 echo.
 echo Starting backend and frontend in two new windows...
-start "SafeAudit Backend" cmd /k "cd /d \"%ROOT%backend\" ^&^& call .venv\Scripts\activate.bat ^&^& uvicorn app.main:app --reload --port 8000"
-start "SafeAudit Frontend" cmd /k "cd /d \"%ROOT%frontend\" ^&^& npm run dev"
+start "SafeAudit Backend" cmd.exe /k call "%ROOT%start-backend.cmd"
+start "SafeAudit Frontend" cmd.exe /k call "%ROOT%start-frontend.cmd"
 
 echo.
 echo The dashboard will open at http://localhost:5173
