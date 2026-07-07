@@ -9,12 +9,31 @@ const INITIAL_READINESS = {
   model_file_found: false,
   vision_dependencies_ready: false,
   configured_zones: 0,
+  demo_mode: false,
   blockers: ["Loading local MVP readiness…"],
   scope_note: "",
+  demo_note: "",
+};
+
+const INITIAL_EVALUATION = {
+  real_events: 0,
+  demo_events: 0,
+  reviewed_real_events: 0,
+  confirmed_violations: 0,
+  false_alarms: 0,
+  unclear_events: 0,
+  precision: null,
+  review_rate: 0,
+  ready_for_reporting: false,
+  note: "Loading evaluation summary…",
 };
 
 function displayVerdict(verdict) {
   return verdict.replaceAll("_", " ");
+}
+
+function displayPercent(value) {
+  return value === null || value === undefined ? "Not available" : `${(value * 100).toFixed(1)}%`;
 }
 
 export default function App() {
@@ -31,6 +50,7 @@ export default function App() {
     false_alarms: 0,
   });
   const [readiness, setReadiness] = useState(INITIAL_READINESS);
+  const [evaluation, setEvaluation] = useState(INITIAL_EVALUATION);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
@@ -48,14 +68,15 @@ export default function App() {
     try {
       setLoading(true);
       setError("");
-      const [eventsResponse, zonesResponse, metricsResponse, readinessResponse, reviewsResponse] = await Promise.all([
+      const [eventsResponse, zonesResponse, metricsResponse, readinessResponse, reviewsResponse, evaluationResponse] = await Promise.all([
         fetch(`${API_BASE}/events`),
         fetch(`${API_BASE}/zones`),
         fetch(`${API_BASE}/metrics`),
         fetch(`${API_BASE}/readiness`),
         fetch(`${API_BASE}/reviews`),
+        fetch(`${API_BASE}/evaluation/summary`),
       ]);
-      if (!eventsResponse.ok || !zonesResponse.ok || !metricsResponse.ok || !readinessResponse.ok || !reviewsResponse.ok) {
+      if (!eventsResponse.ok || !zonesResponse.ok || !metricsResponse.ok || !readinessResponse.ok || !reviewsResponse.ok || !evaluationResponse.ok) {
         throw new Error("Unable to load SafeAudit data.");
       }
       setEvents(await eventsResponse.json());
@@ -63,6 +84,7 @@ export default function App() {
       setMetrics(await metricsResponse.json());
       setReadiness(await readinessResponse.json());
       setReviews(await reviewsResponse.json());
+      setEvaluation(await evaluationResponse.json());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -158,6 +180,7 @@ export default function App() {
           <p className="subtitle">Local PPE and restricted-zone safety event dashboard.</p>
         </div>
         <div className="header-actions">
+          {readiness.demo_mode && <span className="demo-pill">DEMO MODE</span>}
           <a className="secondary-button" href={`${API_BASE}/reports/events.csv`}>Download event CSV</a>
           <button onClick={loadDashboard}>Refresh</button>
         </div>
@@ -168,6 +191,7 @@ export default function App() {
           <p className="eyebrow">MVP TEST READINESS</p>
           <h2>{readiness.ready_for_test ? "Ready for an authorised local test" : "Setup required before video analysis"}</h2>
           <p>{readiness.scope_note}</p>
+          {readiness.demo_mode && <p><strong>Dashboard walkthrough is available:</strong> {readiness.demo_note}</p>}
         </div>
         {!readiness.ready_for_test && (
           <ul>
@@ -209,6 +233,25 @@ export default function App() {
 
       {status && <p className="notice">{status}</p>}
       {error && <p className="error">{error} Start the FastAPI backend on port 8000 and check its API docs.</p>}
+
+      <section className="panel evaluation-panel">
+        <div className="panel-heading">
+          <h2>Prototype evaluation</h2>
+          <p>Only real local-video events are counted below. Seeded demo records are excluded from validation metrics.</p>
+        </div>
+        <div className="evaluation-grid">
+          <article><span>Real events</span><strong>{evaluation.real_events}</strong></article>
+          <article><span>Reviewed real events</span><strong>{evaluation.reviewed_real_events}</strong></article>
+          <article><span>Review rate</span><strong>{displayPercent(evaluation.review_rate)}</strong></article>
+          <article><span>Review-based precision</span><strong>{displayPercent(evaluation.precision)}</strong></article>
+        </div>
+        <p className={evaluation.ready_for_reporting ? "notice" : "hint"}>
+          {evaluation.ready_for_reporting
+            ? "Review-based precision is available. Add the manual ground-truth log before using it in a report."
+            : "No reviewed real events yet. Demo clicks do not count as model validation."}
+        </p>
+        <p className="hint">{evaluation.note}</p>
+      </section>
 
       <section className="panel">
         <div className="panel-heading">
