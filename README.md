@@ -34,6 +34,35 @@ Dashboard, report and alerts
 
 Planned stack: Python, OpenCV, a custom PPE model, FastAPI, SQLite/PostgreSQL, React, and local edge deployment.
 
+## Run modes
+
+### Dashboard demo mode
+
+Set this in `backend/.env` to test the dashboard, reviews, metrics, and CSV export without any model or video:
+
+```text
+DEMO_MODE=true
+```
+
+### Real PPE video mode
+
+A custom local YOLO model is required. The model must recognise canonical classes:
+
+```text
+person
+helmet
+vest
+```
+
+Common names such as `Worker`, `Hardhat`, and `Safety Vest` are normalised automatically. Before setting `MODEL_PATH`, validate the model from the `backend` folder:
+
+```cmd
+pip install -r requirements-vision.txt
+python -m app.scripts.check_ppe_model "D:\\path\\to\\ppe-model.pt"
+```
+
+Read `backend/models/README.md` before adding any model. Do not commit model weights.
+
 ## Honest scope
 
 This is a prototype. It will not claim validated near-miss prediction, multi-camera tracking, industrial-grade face anonymisation, or safety certification until those capabilities are tested in a real pilot.
