@@ -26,10 +26,10 @@ Never commit the model file, raw CCTV video, incident images, `.env`, or persona
 ## 3. Start the dashboard
 
 ```cmd
-run-demo.cmd
+start-pilot.cmd
 ```
 
-The launcher starts the local backend and frontend. In pilot mode, the dashboard readiness panel should show whether the model file, vision dependencies, and at least one safety zone are ready.
+The pilot launcher checks that demo mode is disabled, then starts the local backend and frontend. The dashboard readiness panel should show whether the model file, vision dependencies, and at least one safety zone are ready.
 
 ## 4. Run one controlled video test
 
