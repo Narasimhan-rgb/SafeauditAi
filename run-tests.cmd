@@ -3,18 +3,28 @@ setlocal EnableExtensions
 
 REM SafeAudit AI local verification command for Windows CMD.
 set "ROOT=%~dp0"
-cd /d "%ROOT%backend"
+set "BACKEND=%ROOT%backend"
+set "VENV_PYTHON=%BACKEND%\.venv\Scripts\python.exe"
+cd /d "%BACKEND%"
 
-if not exist ".venv\Scripts\python.exe" (
+if not exist "%VENV_PYTHON%" (
     echo ERROR: Backend virtual environment was not found.
     echo Run run-demo.cmd once from the repository root first.
     pause
     exit /b 1
 )
 
-call .venv\Scripts\activate.bat
+REM Install the exact backend dependencies before tests so global Python is never used.
+"%VENV_PYTHON%" -m pip install -r requirements.txt
+if errorlevel 1 (
+    echo.
+    echo Dependency installation failed.
+    pause
+    exit /b 1
+)
+
 set "PYTHONPATH=."
-python -m unittest discover -s tests -v
+"%VENV_PYTHON%" -m unittest discover -s tests -v
 
 if errorlevel 1 (
     echo.
