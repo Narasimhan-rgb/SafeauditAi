@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
 const FILE_BASE = API_BASE.replace("/api/v1", "");
@@ -13,35 +13,56 @@ const INITIAL_READINESS = {
   scope_note: "",
 };
 
+function displayVerdict(verdict) {
+  return verdict.replaceAll("_", " ");
+}
+
 export default function App() {
   const [events, setEvents] = useState([]);
   const [zones, setZones] = useState([]);
-  const [metrics, setMetrics] = useState({ total_events: 0, high_risk_events: 0, events_last_24h: 0, configured_zones: 0 });
+  const [reviews, setReviews] = useState([]);
+  const [metrics, setMetrics] = useState({
+    total_events: 0,
+    high_risk_events: 0,
+    events_last_24h: 0,
+    configured_zones: 0,
+    reviewed_events: 0,
+    confirmed_violations: 0,
+    false_alarms: 0,
+  });
   const [readiness, setReadiness] = useState(INITIAL_READINESS);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [analysing, setAnalysing] = useState(false);
+  const [savingReviewId, setSavingReviewId] = useState(null);
   const [zoneForm, setZoneForm] = useState({ name: "Assembly Bay", coordinates: "80,80,500,430" });
+
+  const reviewByEventId = useMemo(
+    () => Object.fromEntries(reviews.map((review) => [review.event_id, review])),
+    [reviews],
+  );
 
   async function loadDashboard() {
     try {
       setLoading(true);
       setError("");
-      const [eventsResponse, zonesResponse, metricsResponse, readinessResponse] = await Promise.all([
+      const [eventsResponse, zonesResponse, metricsResponse, readinessResponse, reviewsResponse] = await Promise.all([
         fetch(`${API_BASE}/events`),
         fetch(`${API_BASE}/zones`),
         fetch(`${API_BASE}/metrics`),
         fetch(`${API_BASE}/readiness`),
+        fetch(`${API_BASE}/reviews`),
       ]);
-      if (!eventsResponse.ok || !zonesResponse.ok || !metricsResponse.ok || !readinessResponse.ok) {
+      if (!eventsResponse.ok || !zonesResponse.ok || !metricsResponse.ok || !readinessResponse.ok || !reviewsResponse.ok) {
         throw new Error("Unable to load SafeAudit data.");
       }
       setEvents(await eventsResponse.json());
       setZones(await zonesResponse.json());
       setMetrics(await metricsResponse.json());
       setReadiness(await readinessResponse.json());
+      setReviews(await reviewsResponse.json());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -107,6 +128,27 @@ export default function App() {
     }
   }
 
+  async function saveReview(eventId, verdict) {
+    if (!verdict) return;
+    try {
+      setSavingReviewId(eventId);
+      setError("");
+      const response = await fetch(`${API_BASE}/events/${eventId}/review`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verdict, reviewer_note: "" }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Unable to save review.");
+      setStatus(`Event #${eventId} marked as ${displayVerdict(payload.verdict)}.`);
+      await loadDashboard();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingReviewId(null);
+    }
+  }
+
   return (
     <main className="page">
       <header className="header">
@@ -137,6 +179,9 @@ export default function App() {
       <section className="cards" aria-label="Safety summary">
         <article><span>Total events</span><strong>{metrics.total_events}</strong></article>
         <article><span>High-risk events</span><strong>{metrics.high_risk_events}</strong></article>
+        <article><span>Reviewed events</span><strong>{metrics.reviewed_events}</strong></article>
+        <article><span>Confirmed violations</span><strong>{metrics.confirmed_violations}</strong></article>
+        <article><span>False alarms</span><strong>{metrics.false_alarms}</strong></article>
         <article><span>Events in 24 hours</span><strong>{metrics.events_last_24h}</strong></article>
         <article><span>Configured zones</span><strong>{metrics.configured_zones}</strong></article>
       </section>
@@ -169,7 +214,7 @@ export default function App() {
         <div className="panel-heading">
           <div>
             <h2>Recent safety events</h2>
-            <p>Every model result requires supervisor review before safety action is taken.</p>
+            <p>Review each model result. This feedback identifies false alarms and builds pilot evidence for the MVP.</p>
           </div>
         </div>
 
@@ -178,17 +223,33 @@ export default function App() {
         {!loading && events.length > 0 && (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Time</th><th>Type</th><th>Severity</th><th>Message</th><th>Evidence</th></tr></thead>
+              <thead><tr><th>Time</th><th>Type</th><th>Severity</th><th>Message</th><th>Evidence</th><th>Supervisor review</th></tr></thead>
               <tbody>
-                {events.map((event) => (
-                  <tr key={event.id}>
-                    <td>{new Date(event.created_at).toLocaleString()}</td>
-                    <td>{event.event_type}</td>
-                    <td><span className={`badge ${event.severity}`}>{event.severity}</span></td>
-                    <td>{event.message}</td>
-                    <td>{event.evidence_path ? <a href={`${FILE_BASE}${event.evidence_path}`} target="_blank" rel="noreferrer">Review image</a> : "—"}</td>
-                  </tr>
-                ))}
+                {events.map((event) => {
+                  const review = reviewByEventId[event.id];
+                  return (
+                    <tr key={event.id}>
+                      <td>{new Date(event.created_at).toLocaleString()}</td>
+                      <td>{event.event_type}</td>
+                      <td><span className={`badge ${event.severity}`}>{event.severity}</span></td>
+                      <td>{event.message}</td>
+                      <td>{event.evidence_path ? <a href={`${FILE_BASE}${event.evidence_path}`} target="_blank" rel="noreferrer">Review image</a> : "—"}</td>
+                      <td>
+                        <select
+                          className="review-select"
+                          value={review?.verdict || ""}
+                          disabled={savingReviewId === event.id}
+                          onChange={(changeEvent) => saveReview(event.id, changeEvent.target.value)}
+                        >
+                          <option value="">Mark result…</option>
+                          <option value="confirmed_violation">Confirmed violation</option>
+                          <option value="false_alarm">False alarm</option>
+                          <option value="unclear">Unclear</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
