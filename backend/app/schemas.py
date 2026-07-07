@@ -34,6 +34,17 @@ class EventResponse(EventCreate):
     created_at: datetime
 
 
+class EventReviewCreate(BaseModel):
+    verdict: str = Field(pattern="^(confirmed_violation|false_alarm|unclear)$")
+    reviewer_note: str | None = Field(default=None, max_length=500)
+
+
+class EventReviewResponse(EventReviewCreate):
+    id: int
+    event_id: int
+    reviewed_at: datetime
+
+
 class AnalysisResponse(BaseModel):
     status: str
     message: str
