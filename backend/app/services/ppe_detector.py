@@ -22,6 +22,39 @@ class Detection:
         return ((self.x1 + self.x2) // 2, (self.y1 + self.y2) // 2)
 
 
+# Common names used by authorised PPE datasets and custom training runs.
+# The application internally uses only the canonical labels: person, helmet, vest.
+LABEL_ALIASES: dict[str, set[str]] = {
+    "person": {"person", "worker", "human"},
+    "helmet": {"helmet", "hardhat", "hard_hat", "hard-hat", "safety_helmet"},
+    "vest": {
+        "vest",
+        "safety_vest",
+        "safety-vest",
+        "safety vest",
+        "reflective_vest",
+        "reflective-vest",
+        "hi_vis_vest",
+        "hi-vis-vest",
+        "high_visibility_vest",
+    },
+}
+
+
+def canonical_label(raw_label: str) -> str:
+    """Normalise common model-specific class names to MVP labels.
+
+    A model can use ``Hardhat`` or ``Safety Vest`` and still be compatible.
+    Negative labels such as ``NO-Hardhat`` are intentionally not treated as
+    compliant PPE; they need a later, separately validated rule path.
+    """
+    value = raw_label.strip().lower()
+    for canonical, aliases in LABEL_ALIASES.items():
+        if value in aliases:
+            return canonical
+    return value
+
+
 class PPEDetector:
     """Adapter for an authorised custom model with person, helmet and vest labels.
 
@@ -46,15 +79,15 @@ class PPEDetector:
         self.model = YOLO(str(path))
         raw_names = self.model.names
         self.class_names = {
-            int(index): str(name).strip().lower()
+            int(index): canonical_label(str(name))
             for index, name in (raw_names.items() if isinstance(raw_names, dict) else enumerate(raw_names))
         }
         model_labels = set(self.class_names.values())
         missing = self.required_labels - model_labels
         if missing:
             raise ModelConfigurationError(
-                "The custom model must contain labels person, helmet and vest. "
-                f"Missing: {', '.join(sorted(missing))}."
+                "The custom model must recognise person, helmet and vest. "
+                f"Missing after label normalisation: {', '.join(sorted(missing))}."
             )
 
     def infer(self, frame) -> list[Detection]:
@@ -118,5 +151,4 @@ def missing_ppe_for_person(person: Detection, detections: list[Detection], requi
 
         if not item_found:
             missing.append(item)
-
     return missing
