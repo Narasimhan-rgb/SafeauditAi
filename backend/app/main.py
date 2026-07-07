@@ -13,11 +13,13 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import Base, engine, get_db
-from app.models import SafetyEvent, SafetyZone
+from app.models import SafetyEvent, SafetyEventReview, SafetyZone
 from app.schemas import (
     AnalysisResponse,
     EventCreate,
     EventResponse,
+    EventReviewCreate,
+    EventReviewResponse,
     ZoneCreate,
     ZoneResponse,
 )
@@ -38,7 +40,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.mount("/evidence", StaticFiles(directory=incident_directory), name="evidence")
 
 app.add_middleware(
@@ -69,6 +71,16 @@ def event_to_response(event: SafetyEvent) -> EventResponse:
         source_name=event.source_name,
         evidence_path=event.evidence_path,
         created_at=event.created_at,
+    )
+
+
+def review_to_response(review: SafetyEventReview) -> EventReviewResponse:
+    return EventReviewResponse(
+        id=review.id,
+        event_id=review.event_id,
+        verdict=review.verdict,
+        reviewer_note=review.reviewer_note,
+        reviewed_at=review.reviewed_at,
     )
 
 
@@ -116,10 +128,46 @@ def list_events(db: Session = Depends(get_db)) -> list[EventResponse]:
     return [event_to_response(event) for event in events]
 
 
+@app.get(f"{settings.api_prefix}/reviews", response_model=list[EventReviewResponse])
+def list_event_reviews(db: Session = Depends(get_db)) -> list[EventReviewResponse]:
+    reviews = db.scalars(select(SafetyEventReview).order_by(SafetyEventReview.reviewed_at.desc())).all()
+    return [review_to_response(review) for review in reviews]
+
+
+@app.put(f"{settings.api_prefix}/events/{{event_id}}/review", response_model=EventReviewResponse)
+def upsert_event_review(
+    event_id: int,
+    payload: EventReviewCreate,
+    db: Session = Depends(get_db),
+) -> EventReviewResponse:
+    """Save a local supervisor verdict for a detected safety event.
+
+    The Phase 1 MVP has no authentication yet. This is for controlled local
+    testing only; pilot deployment needs user accounts and audit controls.
+    """
+    event = db.scalar(select(SafetyEvent).where(SafetyEvent.id == event_id))
+    if event is None:
+        raise HTTPException(status_code=404, detail="Safety event not found.")
+
+    review = db.scalar(select(SafetyEventReview).where(SafetyEventReview.event_id == event_id))
+    if review is None:
+        review = SafetyEventReview(event_id=event_id, **payload.model_dump())
+        db.add(review)
+    else:
+        review.verdict = payload.verdict
+        review.reviewer_note = payload.reviewer_note
+        review.reviewed_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(review)
+    return review_to_response(review)
+
+
 @app.get(f"{settings.api_prefix}/metrics")
 def safety_metrics(db: Session = Depends(get_db)) -> dict[str, int]:
     """Small dashboard summary for local prototype review."""
     events = db.scalars(select(SafetyEvent)).all()
+    reviews = db.scalars(select(SafetyEventReview)).all()
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
     zones_count = len(db.scalars(select(SafetyZone)).all())
     return {
@@ -127,6 +175,9 @@ def safety_metrics(db: Session = Depends(get_db)) -> dict[str, int]:
         "high_risk_events": sum(event.severity == "high" for event in events),
         "events_last_24h": sum(event.created_at >= cutoff for event in events),
         "configured_zones": zones_count,
+        "reviewed_events": len(reviews),
+        "confirmed_violations": sum(review.verdict == "confirmed_violation" for review in reviews),
+        "false_alarms": sum(review.verdict == "false_alarm" for review in reviews),
     }
 
 
@@ -138,12 +189,28 @@ def readiness(db: Session = Depends(get_db)) -> dict[str, object]:
 
 @app.get(f"{settings.api_prefix}/reports/events.csv")
 def export_events_csv(db: Session = Depends(get_db)) -> Response:
-    """Exports a local review report. It contains metadata only, never raw video."""
+    """Exports a local review report. It contains metadata and local review verdicts, never raw video."""
     events = db.scalars(select(SafetyEvent).order_by(SafetyEvent.created_at.desc())).all()
+    review_by_event = {
+        review.event_id: review
+        for review in db.scalars(select(SafetyEventReview)).all()
+    }
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["event_id", "created_at", "event_type", "severity", "message", "source_name", "evidence_path"])
+    writer.writerow([
+        "event_id",
+        "created_at",
+        "event_type",
+        "severity",
+        "message",
+        "source_name",
+        "evidence_path",
+        "review_verdict",
+        "reviewer_note",
+        "reviewed_at",
+    ])
     for event in events:
+        review = review_by_event.get(event.id)
         writer.writerow([
             event.id,
             event.created_at.isoformat(),
@@ -152,6 +219,9 @@ def export_events_csv(db: Session = Depends(get_db)) -> Response:
             event.message,
             event.source_name or "",
             event.evidence_path or "",
+            review.verdict if review else "",
+            review.reviewer_note if review else "",
+            review.reviewed_at.isoformat() if review else "",
         ])
 
     return Response(
