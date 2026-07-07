@@ -4,6 +4,9 @@ setlocal EnableExtensions
 REM SafeAudit AI local dashboard demo launcher for Windows CMD.
 REM Double-click this file or run it from Command Prompt in the repository root.
 set "ROOT=%~dp0"
+set "BACKEND=%ROOT%backend"
+set "FRONTEND=%ROOT%frontend"
+set "VENV_PYTHON=%BACKEND%\.venv\Scripts\python.exe"
 
 where py >nul 2>nul
 if errorlevel 1 (
@@ -29,20 +32,21 @@ echo   SafeAudit AI - local dashboard demo setup
 echo ==================================================
 echo.
 
-cd /d "%ROOT%backend"
+cd /d "%BACKEND%"
 
-if not exist ".venv\Scripts\python.exe" (
+REM Rebuild a broken or incomplete environment automatically.
+if not exist "%VENV_PYTHON%" (
     echo Creating Python virtual environment...
+    if exist ".venv" rmdir /s /q ".venv"
     py -m venv .venv
     if errorlevel 1 goto :python_error
 )
 
-call .venv\Scripts\activate.bat
-if errorlevel 1 goto :python_error
-
+REM Do not rely on activate.bat. Use the venv interpreter directly.
 echo Installing backend packages...
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+"%VENV_PYTHON%" -m pip install --upgrade pip
+if errorlevel 1 goto :python_error
+"%VENV_PYTHON%" -m pip install -r requirements.txt
 if errorlevel 1 goto :python_error
 
 if not exist ".env" (
@@ -52,10 +56,10 @@ if not exist ".env" (
 REM Keep demo mode enabled without adding duplicate settings.
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$p='.env'; $c=Get-Content $p; if ($c -match '^\s*DEMO_MODE\s*=') { $c = $c -replace '^\s*DEMO_MODE\s*=.*$', 'DEMO_MODE=true'; Set-Content -Path $p -Value $c } else { Add-Content -Path $p -Value 'DEMO_MODE=true' }"
 
-python -m app.seed_demo
+"%VENV_PYTHON%" -m app.seed_demo
 if errorlevel 1 goto :python_error
 
-cd /d "%ROOT%frontend"
+cd /d "%FRONTEND%"
 if not exist "node_modules" (
     echo Installing frontend packages. This can take a few minutes on the first run...
     call npm install
