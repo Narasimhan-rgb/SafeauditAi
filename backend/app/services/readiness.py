@@ -44,6 +44,8 @@ def build_readiness(db: Session) -> dict[str, object]:
         "model_file_found": model_file_found,
         "vision_dependencies_ready": vision_dependencies_ready,
         "configured_zones": zones_count,
+        "demo_mode": settings.demo_mode,
         "blockers": blockers,
         "scope_note": "Phase 1 supports authorised local test videos, PPE compliance and configured zones only.",
+        "demo_note": "Demo mode creates clearly labelled local sample events only; it does not use video analysis or a PPE model.",
     }
