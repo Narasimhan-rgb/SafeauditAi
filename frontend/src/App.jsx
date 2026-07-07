@@ -3,10 +3,21 @@ import { useEffect, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
 const FILE_BASE = API_BASE.replace("/api/v1", "");
 
+const INITIAL_READINESS = {
+  ready_for_test: false,
+  model_configured: false,
+  model_file_found: false,
+  vision_dependencies_ready: false,
+  configured_zones: 0,
+  blockers: ["Loading local MVP readiness…"],
+  scope_note: "",
+};
+
 export default function App() {
   const [events, setEvents] = useState([]);
   const [zones, setZones] = useState([]);
   const [metrics, setMetrics] = useState({ total_events: 0, high_risk_events: 0, events_last_24h: 0, configured_zones: 0 });
+  const [readiness, setReadiness] = useState(INITIAL_READINESS);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
@@ -18,17 +29,19 @@ export default function App() {
     try {
       setLoading(true);
       setError("");
-      const [eventsResponse, zonesResponse, metricsResponse] = await Promise.all([
+      const [eventsResponse, zonesResponse, metricsResponse, readinessResponse] = await Promise.all([
         fetch(`${API_BASE}/events`),
         fetch(`${API_BASE}/zones`),
         fetch(`${API_BASE}/metrics`),
+        fetch(`${API_BASE}/readiness`),
       ]);
-      if (!eventsResponse.ok || !zonesResponse.ok || !metricsResponse.ok) {
+      if (!eventsResponse.ok || !zonesResponse.ok || !metricsResponse.ok || !readinessResponse.ok) {
         throw new Error("Unable to load SafeAudit data.");
       }
       setEvents(await eventsResponse.json());
       setZones(await zonesResponse.json());
       setMetrics(await metricsResponse.json());
+      setReadiness(await readinessResponse.json());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -71,6 +84,10 @@ export default function App() {
       setError("Choose a short authorised test video first.");
       return;
     }
+    if (!readiness.ready_for_test) {
+      setError("Complete the setup checks in MVP test readiness before analysing a video.");
+      return;
+    }
 
     try {
       setAnalysing(true);
@@ -104,6 +121,19 @@ export default function App() {
         </div>
       </header>
 
+      <section className={`readiness ${readiness.ready_for_test ? "ready" : "blocked"}`} aria-label="MVP test readiness">
+        <div>
+          <p className="eyebrow">MVP TEST READINESS</p>
+          <h2>{readiness.ready_for_test ? "Ready for an authorised local test" : "Setup required before video analysis"}</h2>
+          <p>{readiness.scope_note}</p>
+        </div>
+        {!readiness.ready_for_test && (
+          <ul>
+            {readiness.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+          </ul>
+        )}
+      </section>
+
       <section className="cards" aria-label="Safety summary">
         <article><span>Total events</span><strong>{metrics.total_events}</strong></article>
         <article><span>High-risk events</span><strong>{metrics.high_risk_events}</strong></article>
@@ -127,7 +157,7 @@ export default function App() {
           <h2>2. Analyse a short test video</h2>
           <p>Use only authorised footage. The raw upload is deleted after analysis; violation evidence images are retained locally.</p>
           <label>Video file<input type="file" accept="video/mp4,video/avi,video/quicktime,video/x-matroska" onChange={(event) => setSelectedVideo(event.target.files?.[0] || null)} /></label>
-          <button type="submit" disabled={analysing}>{analysing ? "Analysing…" : "Run local analysis"}</button>
+          <button type="submit" disabled={analysing || !readiness.ready_for_test}>{analysing ? "Analysing…" : "Run local analysis"}</button>
           <p className="hint">Requires an authorised custom model with <code>person</code>, <code>helmet</code>, and <code>vest</code> labels.</p>
         </form>
       </section>
