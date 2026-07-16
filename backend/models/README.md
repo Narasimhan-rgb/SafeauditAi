@@ -42,6 +42,6 @@ python -m app.scripts.check_ppe_model "D:\\path\\to\\ppe-model.pt"
 Then add an absolute path in `backend/.env`:
 
 ```text
-MODEL_PATH=D:\\AJVRPS TECH\\researchpaper\\papers\\codes\\Safeauditai\\backend\\models\\ppe-model.pt
+MODEL_PATH=D:\\models\\ppe-model.pt
 DEMO_MODE=false
 ```

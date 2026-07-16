@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ZoneCreate(BaseModel):
@@ -11,6 +11,35 @@ class ZoneCreate(BaseModel):
         max_length=4,
         description="Rectangle: [x1, y1, x2, y2] in video-frame pixels.",
     )
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 2:
+            raise ValueError("Zone name must contain at least two visible characters.")
+        return cleaned
+
+    @field_validator("required_ppe")
+    @classmethod
+    def validate_required_ppe(cls, values: list[str]) -> list[str]:
+        supported = {"helmet", "vest"}
+        normalised = list(dict.fromkeys(value.strip().lower() for value in values if value.strip()))
+        if not normalised:
+            raise ValueError("Select at least one required PPE item.")
+        unsupported = set(normalised) - supported
+        if unsupported:
+            raise ValueError(f"Unsupported PPE items: {', '.join(sorted(unsupported))}.")
+        return normalised
+
+    @model_validator(mode="after")
+    def validate_rectangle(self):
+        x1, y1, x2, y2 = self.coordinates
+        if min(self.coordinates) < 0:
+            raise ValueError("Zone coordinates cannot be negative.")
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("Zone coordinates must follow x1 < x2 and y1 < y2.")
+        return self
 
 
 class ZoneResponse(BaseModel):

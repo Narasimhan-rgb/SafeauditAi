@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -42,7 +43,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.6.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.7.0", lifespan=lifespan)
 app.mount("/evidence", StaticFiles(directory=incident_directory), name="evidence")
 
 app.add_middleware(
@@ -269,7 +270,9 @@ async def analyze_video(file: UploadFile = File(...), db: Session = Depends(get_
             detail="Create at least one configured safety zone before analysing a video.",
         )
 
-    upload_path = settings.data_dir / "uploads" / f"upload_{Path(file.filename).name}"
+    # Use a generated local name so two uploads cannot overwrite each other and
+    # user-controlled filenames never become filesystem paths.
+    upload_path = settings.data_dir / "uploads" / f"{uuid.uuid4().hex}{suffix}"
     max_upload_bytes = 100 * 1024 * 1024
     bytes_written = 0
 

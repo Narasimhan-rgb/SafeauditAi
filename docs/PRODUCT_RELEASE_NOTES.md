@@ -1,5 +1,16 @@
 # SafeAudit AI — Phase 1 Product Release Notes
 
+## SIH polish release — v0.7.0
+
+- Reframed the dashboard as an operator and judge walkthrough for Team RakshaEdge.
+- Added clear local-first, event-only and human-review product principles.
+- Added pilot readiness signals, workflow explanation and a filterable supervisor queue.
+- Preserved explicit demo labels and the boundary between sample and real-video evidence.
+- Added backend zone validation and collision-safe temporary upload names.
+- Fixed the frontend production build, pinned dependency ranges and added a lockfile.
+- Extended GitHub Actions to verify both backend tests and the frontend production build.
+- Added an SIH demo, evidence and fallback playbook.
+
 ## Release type
 
 Local Phase 1 product prototype for dashboard demo and authorised pilot preparation.
